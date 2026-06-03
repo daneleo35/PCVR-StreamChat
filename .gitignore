@@ -1,0 +1,11 @@
+node_modules/
+dist/
+VR Screen/
+installer/
+native/OpenVRHost/
+native/**/bin/
+native/**/obj/
+.tmp-openvr/
+*.tgz
+*.log
+*.ps1

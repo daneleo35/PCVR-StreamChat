@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PCVR StreamChat</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="overlay" id="overlay">
+      <header class="titlebar">
+        <div class="brand">
+          <span class="mark"></span>
+          <span>PCVR StreamChat</span>
+        </div>
+        <div class="window-actions">
+          <button id="settingsButton" title="Settings" aria-label="Settings">&#9881;</button>
+          <button id="lockButton" title="Click-through. Press Ctrl+Shift+V to unlock." aria-label="Click-through">P</button>
+          <button id="minimizeButton" title="Minimize" aria-label="Minimize">_</button>
+          <button id="closeButton" title="Hide" aria-label="Hide">X</button>
+        </div>
+      </header>
+
+      <section class="status-strip" id="statusStrip"></section>
+
+      <section class="capture-surface" id="captureSurface">
+        <nav class="suite-nav" aria-label="Suite mode">
+          <button class="mode-tab active" data-mode="chat" title="Chat">Chat</button>
+          <button class="mode-tab" data-mode="deck" title="Stream">Stream</button>
+        </nav>
+
+        <section class="vr-alert-layer" id="vrAlertLayer" hidden aria-label="VR alerts overlay">
+          <iframe id="vrAlertFrame" class="vr-alert-frame" title="VR alerts" loading="eager" referrerpolicy="no-referrer"></iframe>
+        </section>
+
+        <section class="workspace">
+          <section class="view active" id="chatView" data-view="chat">
+            <section class="messages" id="messages" aria-live="polite">
+              <div class="empty-chat" id="emptyChat">Waiting for chat</div>
+            </section>
+            <div class="chat-scroll-controls">
+              <button id="chatScrollUpButton" title="Scroll up">Up</button>
+              <button id="chatScrollDownButton" title="Scroll down">Down</button>
+            </div>
+          </section>
+
+          <section class="view" id="deckView" data-view="deck">
+            <div class="suite-panel">
+              <h2>Stream</h2>
+              <p id="controlProviderHint">Provider loading</p>
+              <div class="control-row">
+                <button class="secondary" id="refreshProviderStateButton">Refresh</button>
+                <button class="secondary" id="connectObsButton">Connect</button>
+                <button class="secondary" id="disconnectObsButton">Disconnect</button>
+              </div>
+              <div class="deck-grid" id="streamTransportGrid">
+                <button data-obs-action="startStream">Start Stream</button>
+                <button data-obs-action="stopStream">Stop Stream</button>
+                <button data-obs-action="startRecord">Start Rec</button>
+                <button data-obs-action="stopRecord">Stop Rec</button>
+                <button data-obs-action="saveReplay">Save Replay</button>
+                <button data-obs-action="studioMode">Studio</button>
+              </div>
+              <div class="stream-section">
+                <div class="stream-section-head">
+                  <strong>Scenes</strong>
+                  <span id="streamCurrentScene">No scene selected</span>
+                </div>
+                <div class="stream-chip-list" id="streamScenesList"></div>
+              </div>
+              <div class="stream-section">
+                <div class="stream-section-head">
+                  <strong>Audio Devices</strong>
+                  <span id="streamAudioHint">No audio devices loaded</span>
+                </div>
+                <div class="stream-audio-list" id="streamAudioList"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section class="message-actions" id="messageActions" hidden aria-label="Message moderation">
+        <div class="message-actions-card">
+          <div class="message-actions-head">
+            <strong id="messageActionsTitle">Message actions</strong>
+            <button id="closeMessageActionsButton" title="Close" aria-label="Close moderation">&times;</button>
+          </div>
+          <p id="messageActionsDetail">Select a message in chat.</p>
+          <div class="deck-grid">
+            <button data-inline-mod-action="timeout">Timeout</button>
+            <button data-inline-mod-action="delete">Delete</button>
+            <button data-inline-mod-action="ban">Ban</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings" id="settingsPanel" aria-label="Settings">
+        <div class="settings-head">
+          <h1>Settings</h1>
+          <button id="hideSettingsButton" title="Close settings" aria-label="Close settings">&times;</button>
+        </div>
+
+        <nav class="settings-tabs" aria-label="Settings sections">
+          <button class="settings-tab active" data-settings-tab="sources">Sources</button>
+          <button class="settings-tab" data-settings-tab="integrations">Integrations</button>
+          <button class="settings-tab" data-settings-tab="accounts">Accounts</button>
+          <button class="settings-tab" data-settings-tab="vr">VR</button>
+          <button class="settings-tab" data-settings-tab="moderation">Moderation</button>
+        </nav>
+
+        <section class="settings-page active" data-settings-page="sources">
+          <label>
+            Twitch channels
+            <textarea id="twitchChannels" rows="3" placeholder="channel_one, channel_two"></textarea>
+          </label>
+
+          <label>
+            YouTube sources
+            <textarea id="youtubeLiveIds" rows="3" placeholder="https://www.youtube.com/@your-channel"></textarea>
+          </label>
+
+          <label>
+            Kick channels
+            <textarea id="kickChannels" rows="3" placeholder="channel_one, channel_two"></textarea>
+          </label>
+
+          <div class="control-row">
+            <label>
+              Opacity
+              <input id="opacity" type="range" min="0.2" max="1" step="0.02" />
+            </label>
+            <label>
+              Text size
+              <input id="fontScale" type="range" min="0.75" max="1.6" step="0.05" />
+            </label>
+          </div>
+
+          <div class="toggle-grid">
+            <label><input id="compactMode" type="checkbox" /> Compact</label>
+            <label><input id="showBadges" type="checkbox" /> Badges</label>
+            <label><input id="showTimestamps" type="checkbox" /> Time</label>
+            <label><input id="alwaysOnTop" type="checkbox" /> Topmost</label>
+            <label><input id="youtubeUseCookies" type="checkbox" /> YouTube cookies</label>
+          </div>
+
+        </section>
+
+        <section class="settings-page" data-settings-page="integrations">
+          <div class="settings-section">
+            <h2>Updates</h2>
+            <div class="control-row updates-row">
+              <label class="toggle-inline">
+                <input id="updatesCheckOnStartup" type="checkbox" />
+                Check for updates on startup
+              </label>
+              <button class="secondary" id="checkForUpdatesButton">Check now</button>
+            </div>
+            <p class="hint version-line" id="currentVersionLabel">Version</p>
+          </div>
+
+          <div class="settings-section">
+            <h2>Alerts</h2>
+            <div class="control-row">
+              <label>
+                Browser port
+                <input id="alertPort" type="number" min="1024" max="65535" step="1" />
+              </label>
+              <label>
+                Duration ms
+                <input id="alertDuration" type="number" min="1500" max="20000" step="500" />
+              </label>
+            </div>
+            <label><input id="alertsEnabled" type="checkbox" /> Alerts browser source</label>
+            <label>
+              Primary alert source
+              <select id="alertMode">
+                <option value="custom">App browser source</option>
+                <option value="streamlabs">Streamlabs Alert Box</option>
+              </select>
+            </label>
+            <label id="streamlabsAlertUrlLabel">
+              Streamlabs Alert Box URL
+              <input id="streamlabsAlertUrl" type="text" placeholder="https://streamlabs.com/alert-box/v3/..." />
+            </label>
+            <div class="control-row">
+              <label>
+                VR alert position
+                <select id="alertOverlayPosition">
+                  <option value="banner">Banner</option>
+                  <option value="above-chat">Above chat</option>
+                </select>
+              </label>
+              <label>
+                Alert scale
+                <input id="alertOverlayScale" type="range" min="0.6" max="1.6" step="0.05" />
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h2>Control provider</h2>
+            <label>
+              Provider
+              <select id="controlProvider">
+                <option value="obs">OBS</option>
+                <option value="streamlabs-desktop">Streamlabs Desktop</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="settings-section">
+            <h2>Stream connection</h2>
+            <div class="openvr-grid">
+              <label id="obsHostLabel">
+                Host
+                <input id="obsHost" type="text" placeholder="127.0.0.1" />
+              </label>
+              <label id="obsPortLabel">
+                Port
+                <input id="obsPort" type="number" min="1" max="65535" step="1" />
+              </label>
+              <label id="obsPasswordLabel">
+                Password / token
+                <input id="obsPassword" type="password" placeholder="Optional" />
+              </label>
+              <label>
+                Scene
+                <select id="deckScene">
+                  <option value="">Loading scenes</option>
+                </select>
+              </label>
+              <label>
+                Mic input
+                <select id="deckMic">
+                  <option value="">Loading audio inputs</option>
+                </select>
+              </label>
+              <label id="deckCameraLabel">
+                Camera source
+                <select id="deckCamera">
+                  <option value="">Loading camera sources</option>
+                </select>
+              </label>
+              <label><input id="obsAutoConnect" type="checkbox" /> Auto-connect provider</label>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-page" data-settings-page="accounts">
+          <div class="settings-section">
+            <h2>Twitch</h2>
+            <div class="openvr-grid">
+              <label>
+                Twitch client ID
+                <input id="twitchOAuthClientId" type="text" placeholder="Twitch app client ID" />
+              </label>
+              <label>
+                Twitch client secret
+                <input id="twitchOAuthClientSecret" type="password" placeholder="Twitch app client secret" />
+              </label>
+            </div>
+            <div class="auth-row">
+              <button class="secondary" data-dashboard-link="https://dev.twitch.tv/console/apps">Open Twitch Dashboard</button>
+              <button class="secondary" data-oauth-login="twitch">Login to Twitch</button>
+              <button class="secondary" data-oauth-logout="twitch">Disconnect API</button>
+              <span id="oauthTwitchApiStatus">Twitch API not connected</span>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h2>YouTube</h2>
+            <label>
+              YouTube login mode
+              <select id="youtubeAuthMode">
+                <option value="oauth">OAuth / API</option>
+                <option value="browser">Browser fallback</option>
+              </select>
+            </label>
+            <div class="openvr-grid" id="youtubeOAuthSection">
+              <label>
+                Google client ID
+                <input id="youtubeOAuthClientId" type="text" placeholder="Google OAuth client ID" />
+              </label>
+              <label>
+                Google client secret
+                <input id="youtubeOAuthClientSecret" type="password" placeholder="Google OAuth client secret" />
+              </label>
+            </div>
+            <div class="auth-row" id="youtubeOAuthActions">
+              <button class="secondary" data-dashboard-link="https://console.cloud.google.com/apis/credentials">Open Google Cloud</button>
+              <button class="secondary" data-oauth-login="youtube">Login to YouTube</button>
+              <button class="secondary" data-oauth-logout="youtube">Disconnect API</button>
+              <span id="oauthYoutubeApiStatus">YouTube API not connected</span>
+            </div>
+            <div class="auth-row" id="youtubeBrowserActions">
+              <button class="secondary" data-auth-session-login="youtube">Browser fallback</button>
+              <button class="secondary" data-auth-session-logout="youtube">Clear browser session</button>
+              <span id="oauthYoutubeStatus">Used only for current YouTube moderation fallback</span>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h2>Kick</h2>
+            <div class="openvr-grid">
+              <label>
+                Kick client ID
+                <input id="kickOAuthClientId" type="text" placeholder="Kick app client ID" />
+              </label>
+              <label>
+                Kick client secret
+                <input id="kickOAuthClientSecret" type="password" placeholder="Kick app client secret" />
+              </label>
+            </div>
+            <div class="auth-row">
+              <button class="secondary" data-dashboard-link="https://kick.com/settings/developer">Open Kick Dashboard</button>
+              <button class="secondary" data-oauth-login="kick">Login to Kick</button>
+              <button class="secondary" data-oauth-logout="kick">Disconnect API</button>
+              <span id="oauthKickApiStatus">Kick API not connected</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-page" data-settings-page="vr">
+          <div class="toggle-grid">
+            <label><input id="openVrEnabled" type="checkbox" /> OpenVR</label>
+            <label><input id="openVrWorldGrab" type="checkbox" /> World grab</label>
+            <label><input id="openVrWorldLocked" type="checkbox" /> World locked</label>
+          </div>
+
+          <div class="openvr-grid" aria-label="OpenVR overlay placement">
+            <label>
+              Anchor
+              <select id="openVrAnchor">
+                <option value="world">World</option>
+                <option value="left-controller">Left controller</option>
+                <option value="right-controller">Right controller</option>
+              </select>
+            </label>
+            <label>
+              Position
+              <select id="openVrPreset">
+                <option value="top">Top of controller</option>
+                <option value="behind">Behind controller</option>
+                <option value="wrist-side">Wrist side</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label>
+              Size m
+              <input id="openVrWidth" type="number" min="0.02" max="2" step="0.01" />
+            </label>
+            <label>
+              Alpha
+              <input id="openVrAlpha" type="number" min="0.1" max="1" step="0.05" />
+            </label>
+            <label>
+              X
+              <input id="openVrX" type="number" min="-10" max="10" step="0.05" />
+            </label>
+            <label>
+              Y
+              <input id="openVrY" type="number" min="-10" max="10" step="0.05" />
+            </label>
+            <label>
+              Z
+              <input id="openVrZ" type="number" min="-10" max="10" step="0.05" />
+            </label>
+            <label>
+              Pitch
+              <input id="openVrPitch" type="number" min="-180" max="180" step="5" />
+            </label>
+            <label>
+              Yaw
+              <input id="openVrYaw" type="number" min="-180" max="180" step="5" />
+            </label>
+            <label>
+              Roll
+              <input id="openVrRoll" type="number" min="-180" max="180" step="5" />
+            </label>
+            <label>
+              MS
+              <input id="openVrInterval" type="number" min="50" max="2000" step="50" />
+            </label>
+          </div>
+
+          <p class="hint">
+            The VR overlay captures the suite tabs and active panel, not the settings panel, so controller clicks can act on tabs, chat controls, deck buttons, and moderation controls.
+          </p>
+        </section>
+
+        <section class="settings-page" data-settings-page="moderation">
+          <div class="settings-section">
+            <h2>Twitch moderation</h2>
+            <div class="openvr-grid">
+              <label>
+                Twitch mod user
+                <input id="modTwitchUser" type="text" placeholder="username" />
+              </label>
+              <label>
+                Fallback token
+                <input id="modTwitchToken" type="password" placeholder="oauth:..." />
+              </label>
+              <label>
+                Timeout sec
+                <input id="modTimeout" type="number" min="1" max="1209600" step="1" />
+              </label>
+            </div>
+            <label>
+              Reason
+              <input id="modReason" type="text" placeholder="Handled from VR" />
+            </label>
+            <p class="hint">
+              Selected Twitch messages can be timed out, deleted, or banned from the VR moderation tab. If Twitch OAuth is connected above, this fallback token can stay empty.
+            </p>
+          </div>
+        </section>
+
+        <button class="primary" id="saveButton">Reconnect now</button>
+        <p class="hint">
+          Channel and suite settings auto-save and reconnect after you stop typing.
+        </p>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

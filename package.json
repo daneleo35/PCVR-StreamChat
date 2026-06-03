@@ -1,0 +1,40 @@
+{
+  "name": "vr-chat-screen",
+  "version": "1.0.0",
+  "description": "Transparent VR-friendly chat overlay for Twitch, YouTube Live, and Kick.",
+  "homepage": "https://github.com/daneleo35/PCVR-StreamChat/releases/latest",
+  "main": "src/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daneleo35/PCVR-StreamChat.git"
+  },
+  "scripts": {
+    "build:openvr": "node scripts/build-openvr-host.js",
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "package": "npm run build:openvr && electron-packager . \"VR Chat Screen\" --platform=win32 --arch=x64 --out=dist --overwrite --no-asar --icon=assets/icon.ico --ignore=\"^/dist($|/)\" --ignore=\"^/VR Screen($|/)\" --ignore=\"^/installer($|/)\" --ignore=\"^/\\.tmp-openvr($|/)\" --ignore=\"^/\\.git($|/)\" --ignore=\"^/native/VrChatScreen\\.OpenVRHost/(bin|obj)($|/)\"",
+    "installer": "npm run package && node scripts/create-installer.js"
+  },
+  "keywords": [
+    "steamvr",
+    "overlay",
+    "twitch",
+    "youtube",
+    "kick",
+    "chat"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "tmi.js": "^1.8.5",
+    "ws": "^8.17.1",
+    "youtube-chat": "^2.2.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.0.0",
+    "electron": "^42.2.0",
+    "electron-winstaller": "^5.4.0",
+    "semver": "^7.7.3"
+  }
+}
