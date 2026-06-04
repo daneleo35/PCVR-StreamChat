@@ -3045,6 +3045,100 @@ async function fetchOAuthProfile(platform, accessToken) {
   throw new Error(`Unsupported OAuth platform: ${platform}`);
 }
 
+async function getOAuthStatus(platform) {
+  const account = getOAuthAccount(platform);
+  const label = getOAuthLabel(platform);
+
+  if (!account.clientId || !account.clientSecret) {
+    return {
+      platform,
+      configured: false,
+      connected: false,
+      valid: false,
+      needsLogin: false,
+      detail: `${label} API not configured`
+    };
+  }
+
+  if (!account.accessToken) {
+    return {
+      platform,
+      configured: true,
+      connected: false,
+      valid: false,
+      needsLogin: false,
+      detail: `${label} API ready to connect`
+    };
+  }
+
+  if (account.expiresAt && Date.now() >= (Number(account.expiresAt) - 60_000)) {
+    return {
+      platform,
+      configured: true,
+      connected: false,
+      valid: false,
+      needsLogin: true,
+      detail: `${label} login expired. Sign in again.`
+    };
+  }
+
+  try {
+    const profile = await fetchOAuthProfile(platform, account.accessToken);
+    const next = {};
+    if (profile.login && profile.login !== account.login) next.login = profile.login;
+    if (profile.displayName && profile.displayName !== account.displayName) next.displayName = profile.displayName;
+    if (typeof profile.email === "string" && profile.email !== account.email) next.email = profile.email;
+    if (typeof profile.userId === "string" && profile.userId !== account.userId) next.userId = profile.userId;
+    if (Array.isArray(profile.scopes) && JSON.stringify(profile.scopes) !== JSON.stringify(account.scopes || [])) {
+      next.scopes = profile.scopes;
+    }
+    if (Object.keys(next).length) {
+      updateOAuthAccount(platform, next);
+    }
+
+    const login = String(profile.displayName || profile.login || profile.email || "").trim();
+    return {
+      platform,
+      configured: true,
+      connected: true,
+      valid: true,
+      needsLogin: false,
+      login,
+      detail: login ? `${label} API connected as ${login}` : `${label} API connected`
+    };
+  } catch (error) {
+    const detail = cleanError(error);
+    const needsLogin = oauthErrorNeedsLogin(error, detail);
+    return {
+      platform,
+      configured: true,
+      connected: false,
+      valid: false,
+      needsLogin,
+      detail: needsLogin ? `${label} login expired or was revoked. Sign in again.` : `${label} API check failed: ${detail}`
+    };
+  }
+}
+
+function oauthErrorNeedsLogin(error, detail = "") {
+  const statusCode = Number(error?.response?.status || 0);
+  if ([400, 401, 403].includes(statusCode)) {
+    return true;
+  }
+
+  const text = String(detail || "").toLowerCase();
+  return [
+    "invalid token",
+    "unauthorized",
+    "invalid credentials",
+    "token expired",
+    "expired",
+    "revoked",
+    "invalid_grant",
+    "autherror"
+  ].some((fragment) => text.includes(fragment));
+}
+
 async function logoutOAuth(platform) {
   const account = getOAuthAccount(platform);
   if (account.accessToken) {
@@ -4347,6 +4441,7 @@ ipcMain.handle("auth:sign-in", async (_event, platform) => openBrowserSignInWind
 ipcMain.handle("auth:logout", async (_event, platform) => clearBrowserAuth(String(platform || "")));
 ipcMain.handle("oauth:login", async (_event, platform) => beginOAuthLogin(String(platform || "")));
 ipcMain.handle("oauth:logout", async (_event, platform) => logoutOAuth(String(platform || "")));
+ipcMain.handle("oauth:status", async (_event, platform) => getOAuthStatus(String(platform || "")));
 ipcMain.handle("config:save", async (_event, value) => {
   config = normalizeConfig(value);
   saveConfig();

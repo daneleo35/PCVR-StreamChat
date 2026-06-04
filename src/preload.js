@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("vrChat", {
   signInToYouTube: () => ipcRenderer.invoke("youtube:sign-in"),
   startOAuthLogin: (platform) => ipcRenderer.invoke("oauth:login", platform),
   logoutOAuth: (platform) => ipcRenderer.invoke("oauth:logout", platform),
+  getOAuthStatus: (platform) => ipcRenderer.invoke("oauth:status", platform),
   testAlert: (alert) => ipcRenderer.invoke("alerts:test", alert),
   getAlertUrl: () => ipcRenderer.invoke("alerts:url"),
   getPrimaryAlertSource: () => ipcRenderer.invoke("alerts:primary"),

@@ -1,24 +1,29 @@
 # VR Chat Screen
 
-VR Chat Screen is a transparent Windows overlay for streaming chat while playing SteamVR games. It reads public chat from Twitch, YouTube Live, and Kick, then renders a compact always-on-top window that can be pinned in SteamVR Desktop View, controller or wrist.
+VR Chat Screen is a Windows app for keeping stream chat visible while you're in SteamVR.
+
+It can pull chat from Twitch, YouTube Live, and Kick, show it in a desktop window or a native VR overlay, display alerts in VR, and give you basic moderation and stream controls without needing to keep taking the headset off.
 
 ## Current Status
 
 This version supports two modes:
 
 - A normal transparent desktop overlay window.
-- A native OpenVR overlay that publishes the chat panel and alerts into SteamVR .
+- A native OpenVR overlay that publishes the chat panel and alerts into SteamVR.
 
 ## Features
 
-- OAuth/API account login for Twitch, YouTube, and Kick - allows moderation for chats in the app without leaving VR.
-- Transparent, resizable, always-on-top overlay window.
-- Native OpenVR compositor overlay mode using Direct3D texture updates, with PNG file fallback.
-- Stream tab with clickable scene and audio device controls for OBS or Streamlabs Desktop.
-- Separate VR alerts overlay for `Banner` and `Above chat` placement for use with streamlabs alerts.
-- Update checker with `Update now` or `Later` on startup.
-- Compact mode, opacity, text size, emoji support, badges, timestamps
-- Tray menu so the overlay can be hidden and restored.
+- Multichat support for Twitch, YouTube Live, and Kick.
+- Desktop overlay window that can be pinned with SteamVR Desktop.
+- Native VR chat overlay for a read-only in-headset chat panel.
+- VR alerts overlay with `Banner` and `Above chat` placement.
+- Streamlabs Alert Box support in VR.
+- In-app moderation for supported platforms, including delete, timeout, and ban actions where available.
+- Stream controls for OBS or Streamlabs Desktop, including scene switching and audio controls.
+- OAuth/API-first account login for Twitch, YouTube, and Kick.
+- Emoji support, opacity controls, sizing options, timestamps, and compact overlay styling.
+- Built-in update checker for GitHub releases.
+- Tray menu support so the app can be hidden and restored quickly.
 
 
 ## Run It
@@ -29,19 +34,15 @@ npm run build:openvr
 npm start
 ```
 
-Open settings with the `S` button to add sources:
+Open settings to add your chat sources:
 
 - Twitch channel names, without `https://twitch.tv/`.
 - YouTube live URLs, video IDs, channel IDs, handles, or channel URLs.
 - Kick channel names, without `https://kick.com/`.
 
-Source changes auto-save and reconnect after you stop typing. Use `Reconnect now` only when you want to force an immediate reconnect.
+For accounts and moderation, use the `Accounts` tab. OAuth/API is the main setup path, with browser fallback only where the app still needs it.
 
-YouTube channel and handle sources keep polling in the background. When a new public live stream appears, the app should attach without changing settings. Twitch and Kick stay connected by channel and retry if their connection drops.
-
-For current account setup, use the `Accounts` tab. OAuth/API is now the preferred path. Browser fallback is still kept only where the app still depends on current site moderation helpers.
-
-In `Settings > Integrations`, the app can check GitHub releases for updates on startup or on demand.
+The app can also check GitHub releases for updates from `Settings > Integrations`.
 
 
 ## Use Native OpenVR Overlay
@@ -52,7 +53,9 @@ In `Settings > Integrations`, the app can check GitHub releases for updates on s
 4. Open settings and enable `OpenVR`.
 5. Adjust X/Y/Z if the panel is out of view.
 
-## Use Desktop Pinning / Modify settings
+The native VR overlay is mainly intended as a clean chat display. If you want to interact with the app more directly, using SteamVR Desktop is still the easier option.
+
+## Use Desktop Pinning / Change Settings
 
 1. Start SteamVR.
 2. Run `npm start`.
@@ -65,10 +68,10 @@ In `Settings > Integrations`, the app can check GitHub releases for updates on s
 ```powershell
 npm run package
 ```
-EXE will be created here
+
+The packaged app will be created here:
+
 ```
 dist\VR Chat Screen-win32-x64
 ```
-
-## Coming in a future update
 

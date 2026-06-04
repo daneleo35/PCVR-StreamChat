@@ -33,7 +33,6 @@ const fields = {
   showTimestamps: document.getElementById("showTimestamps"),
   alwaysOnTop: document.getElementById("alwaysOnTop"),
   updatesCheckOnStartup: document.getElementById("updatesCheckOnStartup"),
-  youtubeUseCookies: document.getElementById("youtubeUseCookies"),
   youtubeAuthMode: document.getElementById("youtubeAuthMode"),
   alertsEnabled: document.getElementById("alertsEnabled"),
   alertPort: document.getElementById("alertPort"),
@@ -47,9 +46,6 @@ const fields = {
   obsPort: document.getElementById("obsPort"),
   obsPassword: document.getElementById("obsPassword"),
   obsAutoConnect: document.getElementById("obsAutoConnect"),
-  deckScene: document.getElementById("deckScene"),
-  deckMic: document.getElementById("deckMic"),
-  deckCamera: document.getElementById("deckCamera"),
   twitchOAuthClientId: document.getElementById("twitchOAuthClientId"),
   twitchOAuthClientSecret: document.getElementById("twitchOAuthClientSecret"),
   youtubeOAuthClientId: document.getElementById("youtubeOAuthClientId"),
@@ -94,11 +90,13 @@ const MESSAGE_LIFETIME_MS = 5 * 60 * 1000;
 const MESSAGE_PRUNE_INTERVAL_MS = 30 * 1000;
 let messagePruneTimer;
 let vrAlertTimer;
+const selectEnhancers = new Map();
 
 init();
 
 async function init() {
   overlay.classList.remove("vr-capture");
+  enhanceSelectControls();
   window.vrChat.onMessage(addMessage);
   window.vrChat.onAlert(showAlertPreview);
   window.vrChat.onStatus(updateStatus);
@@ -267,7 +265,6 @@ function hydrateForm(value) {
   fields.showTimestamps.checked = value.showTimestamps;
   fields.alwaysOnTop.checked = value.alwaysOnTop;
   fields.updatesCheckOnStartup.checked = value.updates?.checkOnStartup !== false;
-  fields.youtubeUseCookies.checked = value.youtubeUseCookies;
   fields.youtubeAuthMode.value = value.youtubeAuthMode || getStoredYouTubeAuthMode(value);
   fields.alertsEnabled.checked = value.alerts.enabled;
   fields.alertPort.value = value.alerts.browserSourcePort;
@@ -281,9 +278,6 @@ function hydrateForm(value) {
   fields.obsPort.value = value.obs.port;
   fields.obsPassword.value = value.obs.password;
   fields.obsAutoConnect.checked = value.obs.autoConnect;
-  fields.deckScene.value = value.streamDeck.sceneName;
-  fields.deckMic.value = value.streamDeck.microphoneInput;
-  fields.deckCamera.value = value.streamDeck.cameraSource || "";
   fields.twitchOAuthClientId.value = value.oauth?.twitch?.clientId || "";
   fields.twitchOAuthClientSecret.value = value.oauth?.twitch?.clientSecret || "";
   fields.youtubeOAuthClientId.value = value.oauth?.youtube?.clientId || "";
@@ -300,6 +294,7 @@ function hydrateForm(value) {
   refreshControlProviderHint();
   refreshAlertModeUi();
   refreshYouTubeAuthModeUi();
+  refreshEnhancedSelectControls();
 }
 
 function hydrateOpenVrFields(value) {
@@ -335,7 +330,7 @@ function readForm() {
       ...(config.updates || {}),
       checkOnStartup: fields.updatesCheckOnStartup.checked
     },
-    youtubeUseCookies: fields.youtubeUseCookies.checked,
+    youtubeUseCookies: config.youtubeUseCookies,
     youtubeAuthMode: fields.youtubeAuthMode.value,
     suiteMode: config.suiteMode || "chat",
     alerts: {
@@ -355,9 +350,7 @@ function readForm() {
       autoConnect: fields.obsAutoConnect.checked
     },
     streamDeck: {
-      sceneName: fields.deckScene.value,
-      microphoneInput: fields.deckMic.value,
-      cameraSource: fields.deckCamera.value
+      ...(config.streamDeck || {})
     },
     oauth: {
       ...config.oauth,
@@ -547,7 +540,6 @@ function refreshControlProviderHint() {
   document.getElementById("obsHostLabel").hidden = usingStreamlabs;
   document.getElementById("obsPortLabel").hidden = usingStreamlabs;
   document.getElementById("obsPasswordLabel").hidden = usingStreamlabs;
-  document.getElementById("deckCameraLabel").hidden = usingStreamlabs;
   document.querySelectorAll("[data-obs-action]").forEach((button) => {
     const action = button.dataset.obsAction;
     const unsupported = usingStreamlabs && ![].includes(action);
@@ -568,18 +560,8 @@ function refreshAlertModeUi() {
 async function refreshProviderState() {
   try {
     providerStateCache = await window.vrChat.getProviderState();
-    populateSelect(fields.deckScene, providerStateCache.scenes, "No scenes found", config.streamDeck.sceneName || providerStateCache.currentScene);
-    populateSelect(fields.deckMic, providerStateCache.audioInputs, "No audio inputs found", config.streamDeck.microphoneInput);
-    populateSelect(fields.deckCamera, providerStateCache.videoInputs, "No camera sources found", config.streamDeck.cameraSource);
-
-    if (!config.streamDeck.sceneName && providerStateCache.currentScene) {
-      fields.deckScene.value = providerStateCache.currentScene;
-    }
     renderStreamControlLists();
   } catch (error) {
-    populateSelect(fields.deckScene, [], "Connect provider to load scenes", config.streamDeck.sceneName);
-    populateSelect(fields.deckMic, [], "Connect provider to load audio", config.streamDeck.microphoneInput);
-    populateSelect(fields.deckCamera, [], "Connect provider to load cameras", config.streamDeck.cameraSource);
     streamCurrentScene.textContent = "No scene selected";
     streamAudioHint.textContent = "Connect provider to load audio devices";
     streamScenesList.replaceChildren();
@@ -646,28 +628,92 @@ function renderStreamControlLists() {
   }
 }
 
-function populateSelect(select, items, emptyLabel, preferredValue) {
-  const current = preferredValue || select.value || "";
-  select.replaceChildren();
+function enhanceSelectControls() {
+  document.querySelectorAll("select").forEach((select) => {
+    if (selectEnhancers.has(select)) return;
 
-  const emptyOption = document.createElement("option");
-  emptyOption.value = "";
-  emptyOption.textContent = emptyLabel;
-  select.append(emptyOption);
+    select.classList.add("native-select-hidden");
 
-  for (const item of items || []) {
-    const option = document.createElement("option");
-    option.value = item.name || item.id || "";
-    option.textContent = item.name || item.id || "";
-    option.title = item.kind || option.textContent;
-    select.append(option);
+    const control = document.createElement("div");
+    control.className = "select-cycle";
+
+    const prevButton = document.createElement("button");
+    prevButton.type = "button";
+    prevButton.className = "select-cycle-button";
+    prevButton.textContent = "<";
+    prevButton.setAttribute("aria-label", "Previous option");
+
+    const value = document.createElement("button");
+    value.type = "button";
+    value.className = "select-cycle-value";
+    value.setAttribute("aria-label", "Current option");
+
+    const nextButton = document.createElement("button");
+    nextButton.type = "button";
+    nextButton.className = "select-cycle-button";
+    nextButton.textContent = ">";
+    nextButton.setAttribute("aria-label", "Next option");
+
+    control.append(prevButton, value, nextButton);
+    select.insertAdjacentElement("afterend", control);
+
+    const update = () => {
+      const options = [...select.options];
+      const current = options.find((option) => option.value === select.value) || options[select.selectedIndex] || options[0];
+      const currentLabel = current?.textContent?.trim() || "No options";
+      value.textContent = currentLabel;
+      value.title = currentLabel;
+      const disabled = select.disabled || options.length <= 1;
+      prevButton.disabled = disabled;
+      nextButton.disabled = disabled;
+      value.disabled = disabled;
+    };
+
+    const move = (direction) => {
+      const options = [...select.options];
+      if (options.length <= 1) {
+        update();
+        return;
+      }
+      const currentIndex = Math.max(0, options.findIndex((option) => option.value === select.value));
+      const start = currentIndex < 0 ? 0 : currentIndex;
+      let nextIndex = start;
+      for (let step = 0; step < options.length; step += 1) {
+        nextIndex = (nextIndex + direction + options.length) % options.length;
+        const option = options[nextIndex];
+        if (!option.disabled) {
+          select.value = option.value;
+          select.dispatchEvent(new Event("input", { bubbles: true }));
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          break;
+        }
+      }
+      update();
+    };
+
+    prevButton.addEventListener("click", () => move(-1));
+    nextButton.addEventListener("click", () => move(1));
+    value.addEventListener("click", () => move(1));
+    select.addEventListener("change", update);
+    select.addEventListener("input", update);
+
+    const observer = new MutationObserver(update);
+    observer.observe(select, { childList: true, subtree: true, attributes: true, characterData: true });
+
+    selectEnhancers.set(select, { update, observer });
+    update();
+  });
+}
+
+function refreshEnhancedSelectControls() {
+  for (const select of selectEnhancers.keys()) {
+    refreshEnhancedSelectControl(select);
   }
+}
 
-  if (current && [...select.options].some((option) => option.value === current)) {
-    select.value = current;
-  } else {
-    select.value = current ? "" : select.value;
-  }
+function refreshEnhancedSelectControl(select) {
+  const enhancer = selectEnhancers.get(select);
+  enhancer?.update();
 }
 
 async function refreshAccountStatuses() {
@@ -690,26 +736,24 @@ async function refreshVersionLabel() {
 }
 
 async function refreshOAuthStatuses() {
-  setOAuthStatus("twitch", "oauthTwitchApiStatus");
-  setOAuthStatus("youtube", "oauthYoutubeApiStatus");
-  setOAuthStatus("kick", "oauthKickApiStatus");
+  await Promise.all([
+    setOAuthStatus("twitch", "oauthTwitchApiStatus"),
+    setOAuthStatus("youtube", "oauthYoutubeApiStatus"),
+    setOAuthStatus("kick", "oauthKickApiStatus")
+  ]);
 }
 
-function setOAuthStatus(platform, elementId) {
+async function setOAuthStatus(platform, elementId) {
   const target = document.getElementById(elementId);
   if (!target) return;
 
-  const account = config?.oauth?.[platform] || {};
-  const accessToken = String(account.accessToken || "").trim();
-  const login = String(account.displayName || account.login || account.email || "").trim();
-  const label = platformNames[platform] || platform;
-
-  if (!accessToken) {
-    target.textContent = account.clientId ? `${label} API ready to connect` : `${label} API not connected`;
-    return;
+  try {
+    const summary = await window.vrChat.getOAuthStatus(platform);
+    target.textContent = summary?.detail || `${platformNames[platform] || platform} status unavailable`;
+  } catch (error) {
+    const label = platformNames[platform] || platform;
+    target.textContent = `${label} API status check failed`;
   }
-
-  target.textContent = login ? `${label} API connected as ${login}` : `${label} API connected`;
 }
 
 function setAccountStatus(platform, summary) {

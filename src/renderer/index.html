@@ -141,7 +141,6 @@
             <label><input id="showBadges" type="checkbox" /> Badges</label>
             <label><input id="showTimestamps" type="checkbox" /> Time</label>
             <label><input id="alwaysOnTop" type="checkbox" /> Topmost</label>
-            <label><input id="youtubeUseCookies" type="checkbox" /> YouTube cookies</label>
           </div>
 
         </section>
@@ -211,7 +210,7 @@
 
           <div class="settings-section">
             <h2>Stream connection</h2>
-            <div class="openvr-grid">
+            <div class="openvr-grid integration-connection-grid">
               <label id="obsHostLabel">
                 Host
                 <input id="obsHost" type="text" placeholder="127.0.0.1" />
@@ -223,24 +222,6 @@
               <label id="obsPasswordLabel">
                 Password / token
                 <input id="obsPassword" type="password" placeholder="Optional" />
-              </label>
-              <label>
-                Scene
-                <select id="deckScene">
-                  <option value="">Loading scenes</option>
-                </select>
-              </label>
-              <label>
-                Mic input
-                <select id="deckMic">
-                  <option value="">Loading audio inputs</option>
-                </select>
-              </label>
-              <label id="deckCameraLabel">
-                Camera source
-                <select id="deckCamera">
-                  <option value="">Loading camera sources</option>
-                </select>
               </label>
               <label><input id="obsAutoConnect" type="checkbox" /> Auto-connect provider</label>
             </div>
@@ -327,7 +308,7 @@
             <label><input id="openVrWorldLocked" type="checkbox" /> World locked</label>
           </div>
 
-          <div class="openvr-grid" aria-label="OpenVR overlay placement">
+          <div class="openvr-grid vr-settings-grid" aria-label="OpenVR overlay placement">
             <label>
               Anchor
               <select id="openVrAnchor">

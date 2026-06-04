@@ -26,6 +26,32 @@ textarea {
   font: inherit;
 }
 
+.native-select-hidden {
+  display: none !important;
+}
+
+.select-cycle {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.select-cycle-button,
+.select-cycle-value {
+  width: 100%;
+  min-height: 34px;
+}
+
+.select-cycle-value {
+  padding: 0 10px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .overlay {
   --overlay-opacity: 0.92;
   --font-scale: 1;
@@ -821,6 +847,14 @@ select option {
   margin-bottom: 14px;
 }
 
+.integration-connection-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vr-settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .openvr-grid label {
   margin: 0;
 }
@@ -937,6 +971,8 @@ select option {
   .control-row,
   .toggle-grid,
   .openvr-grid,
+  .integration-connection-grid,
+  .vr-settings-grid,
   .deck-grid,
   .auth-row {
     grid-template-columns: 1fr;
