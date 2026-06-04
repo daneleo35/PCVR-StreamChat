@@ -52,36 +52,23 @@ In `Settings > Integrations`, the app can check GitHub releases for updates on s
 4. Open settings and enable `OpenVR`.
 5. Adjust X/Y/Z if the panel is out of view.
 
-Default placement is `x=0`, `y=1.35`, `z=-1.35`, which puts the overlay in front of you in standing-space coordinates.
-
-## Use Desktop Pinning
+## Use Desktop Pinning / Modify settings
 
 1. Start SteamVR.
 2. Run `npm start`.
 3. Open SteamVR Dashboard.
 4. Open Desktop View and select the `VR Chat Screen` window.
 5. Pin/place the window in your VR space.
-6. Use the crosshair button in the overlay to turn on click-through once it is positioned.
 
 ## Build The Windows App
 
 ```powershell
 npm run package
 ```
-
-To create a GitHub release installer:
-
-```powershell
-npm run installer
+EXE will be created here
 ```
-
-## Notes
-
-- Twitch public chat does not require a token for reading messages.
-- Twitch moderation should use OAuth/API.
-- YouTube public live videos work best. Browser fallback is still used for some current moderation helper actions.
-- Kick moderation now uses OAuth/API only. Timeout and ban are supported through the API path; delete is not available in the current app build.
-- The OpenVR path submits live Direct3D 11 textures through `SetOverlayTexture`. If texture initialization fails, the host can still fall back to the older PNG-file update path.
+dist\VR Chat Screen-win32-x64
+```
 
 ## Coming in a future update
 
