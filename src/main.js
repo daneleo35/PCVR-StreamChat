@@ -74,9 +74,12 @@ let openVrFrameTimer;
 let openVrFramePath;
 let openVrFrameWriteInFlight = false;
 let openVrLastFrameBytes;
-let openVrTextureMode = true;
+let openVrTextureMode = false;
 let openVrCaptureBounds;
 let openVrShutdownRequested = false;
+let openVrStartupRefreshPending = true;
+let openVrFrameDebounceTimer;
+let openVrFrameDirty = false;
 let alertOverlayWindow;
 let alertOverlayWindowLoaded = false;
 let alertOverlayWindowUrl = "";
@@ -86,6 +89,8 @@ let alertVrFramePath;
 let alertVrFrameWriteInFlight = false;
 let alertVrLastFrameBytes;
 let alertVrShutdownRequested = false;
+let alertVrFrameDebounceTimer;
+let alertVrFrameDirty = false;
 let alertServer;
 let alertWss;
 let alertServerPort;
@@ -517,7 +522,24 @@ function rememberChatOverlayMessage(entry) {
   while (chatOverlayMessages.length > (config.maxMessages || MAX_MESSAGES)) {
     chatOverlayMessages.shift();
   }
-  syncChatOverlayWindow().catch((error) => debugLog(`syncChatOverlayWindow failed ${cleanError(error)}`));
+  scheduleOpenVrFrameWrite(90);
+}
+
+function scheduleOpenVrFrameWrite(delayMs = 0) {
+  openVrFrameDirty = true;
+
+  if (!config.openVrOverlay.enabled || !openVrFramePath) {
+    return;
+  }
+
+  if (openVrFrameDebounceTimer) {
+    clearTimeout(openVrFrameDebounceTimer);
+  }
+
+  openVrFrameDebounceTimer = setTimeout(() => {
+    openVrFrameDebounceTimer = undefined;
+    writeOpenVrFrame().catch((error) => status("OpenVR", "error", cleanError(error)));
+  }, Math.max(0, delayMs));
 }
 
 function moderationNotice(action, target) {
@@ -596,7 +618,7 @@ async function restartConnectors() {
   }
   emit("chat:reset", {});
   chatOverlayMessages.length = 0;
-  syncChatOverlayWindow().catch((error) => debugLog(`syncChatOverlayWindow reset failed ${cleanError(error)}`));
+  scheduleOpenVrFrameWrite(0);
   emitStatusSnapshot();
 
   if (config.twitchChannels.length) {
@@ -700,22 +722,23 @@ async function restartOpenVrOverlay() {
     }
   });
 
-  if (openVrTextureMode && openVrLastFrameBytes) {
-    await delay(30);
-    if (!writeOpenVrTextureFrame(openVrLastFrameBytes)) {
-      await writeOpenVrFrame().catch((error) => status("OpenVR", "error", cleanError(error)));
-    }
-  }
-
   for (const ms of [120, 320, 720]) {
     setTimeout(() => {
+      openVrFrameDirty = true;
       writeOpenVrFrame().catch((error) => debugLog(`Delayed OpenVR frame write failed ${cleanError(error)}`));
     }, ms);
   }
 
-  openVrFrameTimer = setInterval(() => {
-    writeOpenVrFrame().catch((error) => status("OpenVR", "error", cleanError(error)));
-  }, vr.frameIntervalMs);
+  if (openVrStartupRefreshPending) {
+    openVrStartupRefreshPending = false;
+    setTimeout(() => {
+      if (!config.openVrOverlay.enabled || !openVrHost) {
+        return;
+      }
+      debugLog("Running one-time OpenVR startup refresh");
+      restartOpenVrOverlay().catch((error) => debugLog(`OpenVR startup refresh failed ${cleanError(error)}`));
+    }, 1500);
+  }
 
   restartAlertVrOverlay().catch((error) => debugLog(`Alert OpenVR startup failed ${cleanError(error)}`));
 }
@@ -869,8 +892,11 @@ async function stopOpenVrOverlay() {
   openVrShutdownRequested = true;
   clearInterval(openVrFrameTimer);
   openVrFrameTimer = undefined;
+  clearTimeout(openVrFrameDebounceTimer);
+  openVrFrameDebounceTimer = undefined;
   openVrFrameWriteInFlight = false;
   openVrLastFrameBytes = undefined;
+  openVrFrameDirty = false;
 
   const host = openVrHost;
   openVrHost = undefined;
@@ -1078,13 +1104,21 @@ async function syncChatOverlayWindow() {
 
 async function writeOpenVrFrame() {
   if (!mainWindow || !openVrFramePath) return;
-  if (openVrFrameWriteInFlight) return;
+  if (openVrFrameWriteInFlight) {
+    openVrFrameDirty = true;
+    return;
+  }
+  if (!openVrFrameDirty && openVrLastFrameBytes) return;
 
   openVrFrameWriteInFlight = true;
   try {
+    openVrFrameDirty = false;
     await writeOpenVrFrameOnce();
   } finally {
     openVrFrameWriteInFlight = false;
+    if (openVrFrameDirty && config.openVrOverlay.enabled) {
+      scheduleOpenVrFrameWrite(60);
+    }
   }
 }
 
@@ -1165,6 +1199,11 @@ async function ensureAlertOverlayWindow(url) {
     alertOverlayWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       debugLog(`Alert overlay helper did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL} main=${isMainFrame}`);
     });
+    alertOverlayWindow.webContents.on("console-message", (_event, _level, message) => {
+      if (message === "__VR_ALERT_DIRTY__") {
+        scheduleAlertVrFrameWrite(60);
+      }
+    });
   }
 
   if (alertOverlayWindowUrl !== url) {
@@ -1191,22 +1230,85 @@ async function ensureAlertOverlayWindow(url) {
   }
 
   primeCaptureWindow(alertOverlayWindow, 920, 260);
+  await installAlertOverlayObserver(alertOverlayWindow).catch((error) => {
+    debugLog(`Alert overlay observer install failed ${cleanError(error)}`);
+  });
 
   return alertOverlayWindow;
+}
+
+async function installAlertOverlayObserver(win) {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  await win.webContents.executeJavaScript(`(() => {
+    if (window.__vrAlertObserverInstalled) {
+      return true;
+    }
+    window.__vrAlertObserverInstalled = true;
+
+    let debounceTimer = null;
+    let pumpTimer = null;
+    let pumpRefs = 0;
+
+    const emit = () => console.debug("__VR_ALERT_DIRTY__");
+    const queue = (delay = 40) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(emit, delay);
+    };
+    const ensurePump = () => {
+      if (!pumpTimer) {
+        pumpTimer = setInterval(emit, 90);
+      }
+      pumpRefs += 1;
+      emit();
+    };
+    const releasePump = () => {
+      pumpRefs = Math.max(0, pumpRefs - 1);
+      if (pumpRefs === 0 && pumpTimer) {
+        clearInterval(pumpTimer);
+        pumpTimer = null;
+        queue(120);
+      }
+    };
+    const attachObserver = () => {
+      const root = document.documentElement || document.body;
+      if (!root) {
+        setTimeout(attachObserver, 50);
+        return;
+      }
+      new MutationObserver(() => queue(60)).observe(root, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true
+      });
+      queue(0);
+    };
+
+    document.addEventListener("animationstart", ensurePump, true);
+    document.addEventListener("animationend", releasePump, true);
+    document.addEventListener("transitionstart", ensurePump, true);
+    document.addEventListener("transitionend", releasePump, true);
+    window.addEventListener("load", () => queue(0), { once: true });
+    attachObserver();
+    return true;
+  })()`, true);
 }
 
 function getAlertOverlaySourceUrl() {
   if (config.alerts.mode === "streamlabs" && config.alerts.streamlabsAlertUrl) {
     return config.alerts.streamlabsAlertUrl;
   }
-  return getAlertBrowserSourceUrl();
+  return `${getAlertBrowserSourceUrl()}?vr=1`;
 }
 
 function getAlertOverlayPlacement() {
   const scale = Number(config.alerts.overlayScale) || 1;
   if (config.alerts.overlayPosition === "banner") {
     return {
-      key: "com.codex.vrchatscreen.alert.banner",
+      key: "com.codex.vrchatscreen.alert",
       name: "VR Chat Alerts",
       anchor: "Hmd",
       preset: "Custom",
@@ -1222,37 +1324,128 @@ function getAlertOverlayPlacement() {
   }
 
   const vr = config.openVrOverlay;
+  const basePose = getOpenVrRelativePose(vr);
+  const chatHeight = vr.widthMeters * (900 / 700);
+  const alertWidth = Math.max(0.16, vr.widthMeters * 0.95 * scale);
+  const alertHeight = alertWidth * (260 / 920);
+  const verticalOffset = (chatHeight / 2) + (alertHeight / 2) + Math.max(0.015, vr.widthMeters * 0.05);
+  const liftedPose = offsetPoseAlongLocalUp(basePose, verticalOffset);
   if (vr.anchor === "world") {
     return {
-      key: "com.codex.vrchatscreen.alert.above",
+      key: "com.codex.vrchatscreen.alert",
       name: "VR Chat Alerts",
       anchor: "World",
       preset: "Custom",
-      width: Math.max(0.16, vr.widthMeters * 0.95 * scale),
-      x: vr.x,
-      y: vr.y + 0.18,
-      z: vr.z,
-      pitch: vr.pitch - 4,
-      yaw: vr.yaw,
-      roll: vr.roll,
+      width: alertWidth,
+      x: liftedPose.x,
+      y: liftedPose.y,
+      z: liftedPose.z,
+      pitch: basePose.pitch,
+      yaw: basePose.yaw,
+      roll: basePose.roll,
       alpha: 1
     };
   }
 
   return {
-    key: "com.codex.vrchatscreen.alert.above",
+    key: "com.codex.vrchatscreen.alert",
     name: "VR Chat Alerts",
     anchor: openVrAnchorForHost(vr.anchor),
-    preset: openVrPresetForHost(vr.controllerPreset),
-    width: Math.max(0.16, vr.widthMeters * 0.95 * scale),
-    x: 0,
-    y: 0.14,
-    z: 0.02,
-    pitch: -6,
-    yaw: 0,
-    roll: 0,
+    preset: "Custom",
+    width: alertWidth,
+    x: liftedPose.x,
+    y: liftedPose.y,
+    z: liftedPose.z,
+    pitch: basePose.pitch,
+    yaw: basePose.yaw,
+    roll: basePose.roll,
     alpha: 1
   };
+}
+
+function getOpenVrRelativePose(vr) {
+  let x = Number(vr.x) || 0;
+  let y = Number(vr.y) || 0;
+  let z = Number(vr.z) || 0;
+  let pitch = Number(vr.pitch) || 0;
+  let yaw = Number(vr.yaw) || 0;
+  let roll = Number(vr.roll) || 0;
+
+  if (vr.anchor !== "world" && vr.controllerPreset !== "custom") {
+    const rightSide = vr.anchor === "right-controller";
+    const presetPose = vr.controllerPreset === "top"
+      ? { x: 0, y: 0.16, z: -0.06, pitch: 55, yaw: 0, roll: 180 }
+      : vr.controllerPreset === "behind"
+        ? { x: 0, y: -0.08, z: 0.10, pitch: 35, yaw: 180, roll: 180 }
+        : {
+            x: rightSide ? 0.05 : -0.05,
+            y: 0.08,
+            z: 0.18,
+            pitch: -25,
+            yaw: rightSide ? 90 : -90,
+            roll: rightSide ? -15 : 15
+          };
+
+    x += presetPose.x;
+    y += presetPose.y;
+    z += presetPose.z;
+    pitch += presetPose.pitch;
+    yaw += presetPose.yaw;
+    roll += presetPose.roll;
+  }
+
+  return { x, y, z, pitch, yaw, roll };
+}
+
+function offsetPoseAlongLocalUp(pose, distance) {
+  const matrix = rotationMatrixDegrees(pose.pitch, pose.yaw, pose.roll + 180);
+  const up = {
+    x: matrix[0][1],
+    y: matrix[1][1],
+    z: matrix[2][1]
+  };
+  return {
+    ...pose,
+    x: pose.x + (up.x * distance),
+    y: pose.y + (up.y * distance),
+    z: pose.z + (up.z * distance)
+  };
+}
+
+function rotationMatrixDegrees(pitchDegrees, yawDegrees, rollDegrees) {
+  const pitch = pitchDegrees * Math.PI / 180;
+  const yaw = yawDegrees * Math.PI / 180;
+  const roll = rollDegrees * Math.PI / 180;
+
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cr = Math.cos(roll);
+  const sr = Math.sin(roll);
+
+  return [
+    [cy * cr + sy * sp * sr, sr * cp, -sy * cr + cy * sp * sr],
+    [-cy * sr + sy * sp * cr, cr * cp, sr * sy + cy * sp * cr],
+    [sy * cp, -sp, cy * cp]
+  ];
+}
+
+function scheduleAlertVrFrameWrite(delayMs = 0) {
+  alertVrFrameDirty = true;
+
+  if (!config.openVrOverlay.enabled || !config.alerts.enabled || !alertVrFramePath) {
+    return;
+  }
+
+  if (alertVrFrameDebounceTimer) {
+    clearTimeout(alertVrFrameDebounceTimer);
+  }
+
+  alertVrFrameDebounceTimer = setTimeout(() => {
+    alertVrFrameDebounceTimer = undefined;
+    writeAlertVrFrame().catch((error) => debugLog(`Alert OpenVR frame write failed ${cleanError(error)}`));
+  }, Math.max(0, delayMs));
 }
 
 async function restartAlertVrOverlay() {
@@ -1281,6 +1474,7 @@ async function restartAlertVrOverlay() {
   }
 
   alertVrFramePath = path.join(app.getPath("userData"), "openvr-alert-frame.png");
+  alertVrFrameDirty = true;
   await writeAlertVrFrame().catch((error) => debugLog(`Initial alert OpenVR frame write failed ${cleanError(error)}`));
 
   const placement = getAlertOverlayPlacement();
@@ -1336,21 +1530,26 @@ async function restartAlertVrOverlay() {
 
   for (const ms of [120, 320, 720]) {
     setTimeout(() => {
+      alertVrFrameDirty = true;
       writeAlertVrFrame().catch((error) => debugLog(`Delayed alert OpenVR frame write failed ${cleanError(error)}`));
     }, ms);
   }
 
   alertVrFrameTimer = setInterval(() => {
+    alertVrFrameDirty = true;
     writeAlertVrFrame().catch((error) => debugLog(`Alert OpenVR frame write failed ${cleanError(error)}`));
-  }, Math.max(80, Math.min(500, config.openVrOverlay.frameIntervalMs)));
+  }, Math.max(120, Math.min(260, config.openVrOverlay.frameIntervalMs)));
 }
 
 async function stopAlertVrOverlay() {
   alertVrShutdownRequested = true;
   clearInterval(alertVrFrameTimer);
   alertVrFrameTimer = undefined;
+  clearTimeout(alertVrFrameDebounceTimer);
+  alertVrFrameDebounceTimer = undefined;
   alertVrFrameWriteInFlight = false;
   alertVrLastFrameBytes = undefined;
+  alertVrFrameDirty = false;
 
   const host = alertVrHost;
   alertVrHost = undefined;
@@ -1373,10 +1572,18 @@ async function stopAlertVrOverlay() {
 }
 
 async function writeAlertVrFrame() {
-  if (!alertOverlayWindow || !alertVrFramePath || alertVrFrameWriteInFlight) return;
+  if (!alertOverlayWindow || !alertVrFramePath) return;
+  if (alertVrFrameWriteInFlight) {
+    alertVrFrameDirty = true;
+    return;
+  }
+  if (!alertVrFrameDirty && alertVrLastFrameBytes) {
+    return;
+  }
 
   alertVrFrameWriteInFlight = true;
   try {
+    alertVrFrameDirty = false;
     const image = await withTimeout(
       alertOverlayWindow.webContents.capturePage().catch((error) => {
         debugLog(`alert capturePage failed ${cleanError(error)}`);
@@ -1399,6 +1606,9 @@ async function writeAlertVrFrame() {
     alertVrLastFrameBytes = bytes;
   } finally {
     alertVrFrameWriteInFlight = false;
+    if (alertVrFrameDirty && config.openVrOverlay.enabled && config.alerts.enabled) {
+      scheduleAlertVrFrameWrite(60);
+    }
   }
 }
 
@@ -2364,7 +2574,7 @@ async function restartAlertServer() {
     }
 
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    response.end(getAlertBrowserSourceHtml());
+    response.end(getAlertBrowserSourceHtml(url.searchParams.get("vr") === "1"));
   });
 
   alertWss = new WebSocket.Server({ noServer: true });
@@ -2410,7 +2620,7 @@ function getAlertTransportLabel() {
   return `Browser source for ${config.controlProvider === "streamlabs-desktop" ? "Streamlabs Desktop" : "OBS"}`;
 }
 
-function getAlertBrowserSourceHtml() {
+function getAlertBrowserSourceHtml(vrMode = false) {
   const duration = Number(config.alerts.durationMs) || 6000;
   return `<!doctype html>
 <html>
@@ -2422,8 +2632,8 @@ function getAlertBrowserSourceHtml() {
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; color: #f7fbff; }
 body { display: block; }
 .stage { position: fixed; inset: 0; display: grid; place-items: start center; padding: 18px; background: transparent; }
-.alert { width: min(720px, calc(100vw - 36px)); padding: 18px 22px; border-radius: 18px; background: rgba(8, 12, 18, .88); border: 1px solid rgba(255,255,255,.18); box-shadow: 0 24px 80px rgba(0,0,0,.40); transform: translateY(-18px) scale(.98); opacity: 0; transition: opacity .22s ease, transform .22s ease; }
-.alert.show { opacity: 1; transform: translateY(0) scale(1); }
+.alert { width: min(720px, calc(100vw - 36px)); padding: 18px 22px; border-radius: 18px; background: rgba(8, 12, 18, .88); border: 1px solid rgba(255,255,255,.18); box-shadow: 0 24px 80px rgba(0,0,0,.40); transform: ${vrMode ? "none" : "translateY(-18px) scale(.98)"}; opacity: 0; transition: ${vrMode ? "none" : "opacity .22s ease, transform .22s ease"}; }
+.alert.show { opacity: 1; transform: none; }
 .type { color: #53fc18; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
 .title { margin-top: 6px; font-size: 26px; font-weight: 900; line-height: 1.1; }
 .message { margin-top: 6px; color: #cfe3f2; font-size: 16px; line-height: 1.28; }
@@ -4185,6 +4395,7 @@ ipcMain.handle("openvr:toggle", async () => {
   await restartOpenVrOverlay();
   if (config.openVrOverlay.enabled) {
     await delay(80);
+    openVrFrameDirty = true;
     await writeOpenVrFrame().catch((error) => debugLog(`Toggle OpenVR frame write failed ${cleanError(error)}`));
   }
   return config;

@@ -96,7 +96,6 @@ var running = true;
 var interaction = OverlayInteraction.None;
 var textureRenderer = options.TextureMode ? D3D11OverlayTextureRenderer.TryCreate() : null;
 var textureReceiver = textureRenderer is not null ? TextureFrameReceiver.Start(Console.OpenStandardInput()) : null;
-var visibilityTick = 0;
 if (textureRenderer is not null)
 {
     Console.WriteLine("OpenVR texture mode is active.");
@@ -113,29 +112,24 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 while (running)
 {
-    visibilityTick++;
-    if (visibilityTick >= 20)
+    try
     {
-        visibilityTick = 0;
-        try
+        if (!overlay.IsOverlayVisible(handle))
         {
-            if (!overlay.IsOverlayVisible(handle))
+            var showError = overlay.ShowOverlay(handle);
+            if (showError == EVROverlayError.None)
             {
-                var showError = overlay.ShowOverlay(handle);
-                if (showError == EVROverlayError.None)
-                {
-                    Console.WriteLine("OpenVR overlay became hidden; ShowOverlay called again.");
-                }
-                else
-                {
-                    Console.Error.WriteLine($"ShowOverlay retry failed: {showError}");
-                }
+                Console.WriteLine("OpenVR overlay became hidden; ShowOverlay called again.");
+            }
+            else
+            {
+                Console.Error.WriteLine($"ShowOverlay retry failed: {showError}");
             }
         }
-        catch (Exception error)
-        {
-            Console.Error.WriteLine($"Overlay visibility check failed: {error.Message}");
-        }
+    }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"Overlay visibility check failed: {error.Message}");
     }
 
     if (HandleOverlayEvents(overlay, handle, interactiveWorld, ref pose, ref interaction))

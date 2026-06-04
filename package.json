@@ -1,6 +1,6 @@
 {
   "name": "vr-chat-screen",
-  "version": "1.0.0",
+  "version": "2.1.1",
   "description": "Transparent VR-friendly chat overlay for Twitch, YouTube Live, and Kick.",
   "homepage": "https://github.com/daneleo35/PCVR-StreamChat/releases/latest",
   "main": "src/main.js",
